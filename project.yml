@@ -11,6 +11,9 @@ packages:
   GhosttyKit:
     url: https://github.com/Lakr233/libghostty-spm
     exactVersion: 2.2.2026103001
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    exactVersion: 2.10.1
 
 settings:
   base:
@@ -39,6 +42,10 @@ targets:
         ATSApplicationFontsPath: Fonts
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # Updates: the newest release's appcast.xml. See .github/workflows/release.yml.
+        SUFeedURL: https://github.com/ashley-hunter/constellation/releases/latest/download/appcast.xml
+        SUPublicEDKey: pYPUFMo8TiZqvVMRnqqxFWIC4ZEgH/w9VPvcA+eyozA=
+        SUEnableAutomaticChecks: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.ashleyhunter.constellation
@@ -57,6 +64,10 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         DEVELOPMENT_TEAM: 3A4A3D69L8
         SWIFT_STRICT_CONCURRENCY: complete
+      configs:
+        # Releases go out signed with Developer ID, which is what notarization accepts.
+        Release:
+          CODE_SIGN_IDENTITY: "Developer ID Application"
     dependencies:
       - package: ConstellationKit
         product: ConstellationCore
@@ -77,6 +88,7 @@ targets:
         link: false
       - package: GhosttyKit
         product: GhosttyTerminal
+      - package: Sparkle
     postBuildScripts:
       - name: Embed constellation-mcp helper
         inputFiles:
@@ -88,4 +100,7 @@ targets:
           helpers="$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers"
           mkdir -p "$helpers"
           cp -f "$BUILT_PRODUCTS_DIR/constellation-mcp" "$helpers/constellation-mcp"
-          codesign --force --options runtime --sign "${EXPANDED_CODE_SIGN_IDENTITY:--}" "$helpers/constellation-mcp"
+          identity="${EXPANDED_CODE_SIGN_IDENTITY:--}"
+          # A release needs a secure timestamp for notarization; a debug build skips the network trip.
+          timestamp=$([ "$CONFIGURATION" = Release ] && [ "$identity" != "-" ] && echo "--timestamp" || echo "--timestamp=none")
+          codesign --force --options runtime $timestamp --sign "$identity" "$helpers/constellation-mcp"

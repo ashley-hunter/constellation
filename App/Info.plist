@@ -20,5 +20,11 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/ashley-hunter/constellation/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>pYPUFMo8TiZqvVMRnqqxFWIC4ZEgH/w9VPvcA+eyozA=</string>
 </dict>
 </plist>

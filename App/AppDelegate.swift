@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        _ = Updates.controller
         model.start()
         model.beginOnboardingIfNeeded()
         let desktop = DesktopWindowController(model: model)

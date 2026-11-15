@@ -1,0 +1,155 @@
+name: Release
+
+# Builds, signs, notarizes and publishes a release when a v* tag is pushed. Run by hand with no
+# tag to build only: the DMG is left on the run for a day.
+#
+# Minutes and storage: this is the only workflow, it never runs on an ordinary push, it uses the
+# standard runner (free on a public repo; the -xlarge one is billed), and the DMG goes to the
+# GitHub Release, not into Actions artifact storage.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to publish as, e.g. v0.1.0. Leave empty to build only.'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+
+jobs:
+  release:
+    runs-on: xcode-27
+    timeout-minutes: 60
+    env:
+      TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Version
+        run: |
+          set -euo pipefail
+          if [ -n "$TAG" ]; then
+            [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Tag $TAG isn't vX.Y.Z"; exit 1; }
+            echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.0.0" >> "$GITHUB_ENV"
+          fi
+          # Sparkle compares this number, so it only ever goes up.
+          echo "BUILD=${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      # The Xcode this app is developed with.
+      - run: sudo xcode-select -s /Applications/Xcode_27.app
+
+      - name: Test
+        working-directory: Packages/ConstellationKit
+        run: swift test
+
+      - name: Generate the project
+        run: brew install xcodegen && xcodegen generate
+
+      - name: Import the signing certificate
+        env:
+          CERT: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          CERT_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          P12="$RUNNER_TEMP/certificate.p12"
+          echo "$CERT" | base64 --decode > "$P12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm -f "$P12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Archive and export
+        run: |
+          set -euo pipefail
+          xcodebuild archive -project Constellation.xcodeproj -scheme Constellation -configuration Release \
+            -destination 'generic/platform=macOS' -archivePath build/Constellation.xcarchive ARCHS=arm64 \
+            MARKETING_VERSION="$VERSION" CURRENT_PROJECT_VERSION="$BUILD" | tail -n 30
+          xcodebuild -exportArchive -archivePath build/Constellation.xcarchive -exportPath build/export \
+            -exportOptionsPlist scripts/ExportOptions.plist | tail -n 10
+          codesign --verify --deep --strict build/export/Constellation.app
+
+      - name: Make the DMG
+        run: |
+          set -euo pipefail
+          mkdir build/dmg
+          ditto build/export/Constellation.app build/dmg/Constellation.app
+          ln -s /Applications build/dmg/Applications
+          hdiutil create -quiet -volname Constellation -srcfolder build/dmg -fs APFS -format ULFO build/Constellation.dmg
+          codesign --sign "Developer ID Application" --timestamp build/Constellation.dmg
+
+      - name: Notarize
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          auth=(--apple-id "$APPLE_ID" --password "$APPLE_APP_SPECIFIC_PASSWORD" --team-id "$APPLE_TEAM_ID")
+          result=$(xcrun notarytool submit build/Constellation.dmg "${auth[@]}" --wait --output-format json)
+          echo "$result"
+          if [ "$(echo "$result" | jq -r .status)" != Accepted ]; then
+            xcrun notarytool log "$(echo "$result" | jq -r .id)" "${auth[@]}"
+            exit 1
+          fi
+          xcrun stapler staple build/Constellation.dmg
+
+      - name: Sign the update and write the appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          curl -sSL https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz | tar -xJ -C "$RUNNER_TEMP" ./bin/sign_update
+          printf '%s' "$SPARKLE_PRIVATE_KEY" > "$RUNNER_TEMP/sparkle.key"
+          signature=$("$RUNNER_TEMP/bin/sign_update" --ed-key-file "$RUNNER_TEMP/sparkle.key" build/Constellation.dmg)
+          rm -f "$RUNNER_TEMP/sparkle.key"
+          # One item, the newest: installed copies read this file from the latest release.
+          cat > build/appcast.xml <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <channel>
+              <title>Constellation</title>
+              <item>
+                <title>Constellation $VERSION</title>
+                <pubDate>$(LC_ALL=C date -u '+%a, %d %b %Y %H:%M:%S +0000')</pubDate>
+                <sparkle:version>$BUILD</sparkle:version>
+                <sparkle:shortVersionString>$VERSION</sparkle:shortVersionString>
+                <sparkle:minimumSystemVersion>27.0</sparkle:minimumSystemVersion>
+                <sparkle:fullReleaseNotesLink>https://github.com/${{ github.repository }}/releases/tag/$TAG</sparkle:fullReleaseNotesLink>
+                <enclosure url="https://github.com/${{ github.repository }}/releases/download/$TAG/Constellation.dmg" type="application/octet-stream" $signature />
+              </item>
+            </channel>
+          </rss>
+          EOF
+          cat build/appcast.xml
+
+      - name: Publish
+        if: env.TAG != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$TAG" build/Constellation.dmg build/appcast.xml \
+            --target "$GITHUB_SHA" --title "Constellation $VERSION" --generate-notes
+
+      # A build-only run keeps its DMG for a day, so it can be tried, then it's gone.
+      - name: Keep the build
+        if: env.TAG == ''
+        uses: actions/upload-artifact@v5
+        with:
+          name: Constellation
+          path: build/Constellation.dmg
+          retention-days: 1

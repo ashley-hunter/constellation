@@ -15,6 +15,7 @@ struct ConstellationApp: App {
         }
         .commands {
             AppCommands(model: appDelegate.model)
+            UpdateCommands()
         }
     }
 }
