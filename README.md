@@ -11,7 +11,7 @@ need you come to the front.
    from the latest release.
 2. Open it and drag Constellation into Applications.
 
-Needs macOS 27 on Apple silicon, plus [Claude Code](https://claude.com/claude-code) or
+Needs macOS 26 (Tahoe) or later on Apple silicon, plus [Claude Code](https://claude.com/claude-code) or
 [Codex](https://github.com/openai/codex) installed. Constellation updates itself: it checks for a
 new release once a day, or choose **Constellation > Check for Updates…**.
 
