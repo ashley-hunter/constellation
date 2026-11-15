@@ -311,7 +311,13 @@ struct ChatComposer: View {
         for addOn in ComposerAddOns.all where addOn.handleKey(press, context) == .handled {
             return .handled
         }
-        guard press.key == .return, !press.modifiers.contains(.shift), !press.modifiers.contains(.option) else { return .ignored }
+        guard press.key == .return else { return .ignored }
+        // ⇧↵ and ⌥↵ start a new line. Left to the field, ⇧↵ ends editing instead, which selects
+        // everything typed so the next key replaces it.
+        if press.modifiers.contains(.shift) || press.modifiers.contains(.option) {
+            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+            return .handled
+        }
         send(steer: press.modifiers.contains(.command))
         return .handled
     }
