@@ -41,11 +41,5 @@ Push a version tag:
 git tag v0.1.0 && git push origin v0.1.0
 ```
 
-`.github/workflows/release.yml` tests, builds, signs with Developer ID, notarizes, and publishes
-`Constellation.dmg` with the `appcast.xml` that installed copies check for updates. Running the
-workflow by hand with no tag builds without publishing.
-
-It reads these repository secrets: `MAC_CERTIFICATE_P12` (base64), `MAC_CERTIFICATE_PASSWORD`,
-`APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` and `SPARKLE_PRIVATE_KEY`. The Sparkle
-key's original is in the login keychain of the Mac that made it (`generate_keys --account
-constellation -x <file>` exports it); its public half is `SUPublicEDKey` in `project.yml`.
+The release workflow builds, notarizes and publishes `Constellation.dmg`, and installed copies
+pick it up as an update.

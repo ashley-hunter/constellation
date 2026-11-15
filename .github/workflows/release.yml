@@ -6,6 +6,12 @@ name: Release
 # Minutes and storage: this is the only workflow, it never runs on an ordinary push, it uses the
 # standard runner (free on a public repo; the -xlarge one is billed), and the DMG goes to the
 # GitHub Release, not into Actions artifact storage.
+#
+# Secrets: MAC_CERTIFICATE_P12 (base64) and MAC_CERTIFICATE_PASSWORD, the Developer ID identity;
+# APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD and APPLE_TEAM_ID, for notarytool; SPARKLE_PRIVATE_KEY, which
+# signs updates. That key's original is in the login keychain of the Mac that made it
+# (`generate_keys --account constellation -x <file>` exports it); its public half is SUPublicEDKey
+# in project.yml.
 on:
   push:
     tags: ['v*']
