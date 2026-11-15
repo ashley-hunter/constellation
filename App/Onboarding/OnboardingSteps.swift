@@ -330,7 +330,6 @@ private struct ProjectsCard: View {
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 8), GridItem(.flexible(), spacing: 8)], spacing: 8) {
                             ForEach(Array(onboarding.projects.enumerated()), id: \.element.id) { index, choice in
                                 ProjectCard(choice: choice, isSelected: onboarding.isSelected(index)) { onboarding.toggle(choice) }
-                                    .id(index)
                             }
                         }
                         .padding(4)
@@ -346,7 +345,10 @@ private struct ProjectsCard: View {
                         }
                     }
                     .onChange(of: onboarding.selection) { _, index in
-                        withAnimation(.hover) { proxy.scrollTo(index) }
+                        // By folder, not position: an added folder shifts every row after it, and an
+                        // index identity would leave the lazy grid showing rows that have moved.
+                        guard onboarding.projects.indices.contains(index) else { return }
+                        withAnimation(.hover) { proxy.scrollTo(onboarding.projects[index].id) }
                     }
                 }
             }
