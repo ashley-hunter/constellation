@@ -1,0 +1,9 @@
+.DS_Store
+Constellation.xcodeproj/
+.build/
+DerivedData/
+.swiftpm/
+xcuserdata/
+Packages/ConstellationKit/Package.resolved
+.claude/worktrees/
+.scratch/
